@@ -1,29 +1,28 @@
 #!/bin/bash
 
+# Thanks to clhex for the script (Github username: clhexftw)
+
 kernel_dir="${PWD}"
 CCACHE=$(command -v ccache)
 objdir="${kernel_dir}/out"
-ANYKERNEL="/workspace/jale/AnyKernel3"
+anykernel=$HOME/anykernel
 DISPLAY="arch/arm64/boot/dts/qcom/xiaomi/overlay/common/display"
+MKDTBOIMG=$HOME/libufdt/utils/src/mkdtboimg.py
 builddir="${kernel_dir}/build"
 ZIMAGE=$kernel_dir/out/arch/arm64/boot/Image
-TC_DIR="/workspace/"
-KERNEL_LOG="$KERNEL_DIR/out/log-$(TZ=Asia/Jakarta date +'%H%M').txt"
-MKDTBOIMG="/workspace/jale/libufdt/utils/src/mkdtboimg.py"
-CLANG_DIR="/workspace/jale/clang"
-GCC64_DIR="/workspace/jale/gcc64/aarch64--glibc--stable-2024.05-1"
-GCC32_DIR="/workspace/jale/gcc32"
-export CONFIG_FILE="vayu_defconfig"
+kernel_name="SkylineKernel_vayu_"
+zip_name="$kernel_name$(date +"%Y%m%d").zip"
+CLANG_DIR=tc/clang
+export CONFIG_FILE="vayu_user_defconfig"
 export ARCH="arm64"
-export KBUILD_BUILD_HOST="AnymoreProject"
-export KBUILD_BUILD_USER="t.me"
-export KBUILD_BUILD_FEATURES="Dev-Jale"
+export KBUILD_BUILD_HOST=gxc2356
+export KBUILD_BUILD_USER=home
 
-export PATH="$CLANG_DIR/bin:$GCC64_DIR/bin:$GCC32_DIR/bin:$PATH"
+export PATH="$CLANG_DIR/bin:$PATH"
 
 if ! [ -d "$CLANG_DIR" ]; then
     echo "Toolchain not found! Cloning to $CLANG_DIR..."
-    if ! git clone -q --depth=1 --single-branch https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r536225.git -b 15.0 $TC_DIR; then
+    if ! git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r536225.git -b 15.0 $CLANG_DIR; then
         echo "Cloning failed! Aborting..."
         exit 1
     fi
@@ -41,35 +40,7 @@ make_defconfig()
     echo -e ${LGR} "########### Generating Defconfig ############${NC}"
     make -s ARCH=${ARCH} O=${objdir} ${CONFIG_FILE} -j$(nproc --all)
 }
-compile()
-{
-    cd ${kernel_dir}
-    echo -e ${LGR} "######### Compiling kernel #########${NC}"
-    make -j$(nproc --all) \
-    O=out \
-    ARCH=arm64                              \
-    SUBARCH=arm64                           \
-    DTC_EXT=dtc				    \
-    CLANG_TRIPLE=aarch64-linux-gnu-         \
-    CROSS_COMPILE=aarch64-linux-gnu-        \
-    CROSS_COMPILE_ARM32=arm-linux-gnueabi-  \
-    CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
-    LD=ld.lld                               \
-    AR=llvm-ar                              \
-    NM=llvm-nm                              \
-    STRIP=llvm-strip                        \
-    OBJCOPY=llvm-objcopy                    \
-    OBJDUMP=llvm-objdump                    \
-    READELF=llvm-readelf                    \
-    HOSTCC=clang                            \
-    HOSTCXX=clang++                         \
-    HOSTAR=llvm-ar                          \
-    HOSTLD=ld.lld                           \
-    LLVM=1                                  \
-    LLVM_IAS=1                              \
-    CC="ccache clang"                       \
-    $1
-}
+
 miui()
 {
     sed -i 's/<70>/<695>/g'   $DISPLAY/dsi-panel-j20s-36-02-0a-lcd-dsc-vid.dtsi
@@ -77,38 +48,59 @@ miui()
     sed -i 's/<70>/<695>/g'   $DISPLAY/dsi-panel-j20s-42-02-0b-lcd-dsc-vid.dtsi
     sed -i 's/<154>/<1546>/g' $DISPLAY/dsi-panel-j20s-42-02-0b-lcd-dsc-vid.dtsi
 }
+
 sdk()
 {
 	python3 $MKDTBOIMG create $ANYKERNEL/dtbo.img --page_size=4096 out/arch/arm64/boot/dts/qcom/vayu-sm8150-overlay.dtbo
 	find out/arch/arm64/boot/dts/qcom -name 'sm8150-v2*.dtb' -exec cat {} + > $ANYKERNEL/dtb
 	python3 $MKDTBOIMG create $ANYKERNEL/dtbo-miui.img --page_size=4096 out/arch/arm64/boot/dts/qcom/vayu-sm8150-overlay.dtbo
 }
-restore()
+
+compile()
 {
-	git restore $DISPLAY/dsi-panel-j20s-36-02-0a-lcd-dsc-vid.dtsi
-	git restore $DISPLAY/dsi-panel-j20s-42-02-0b-lcd-dsc-vid.dtsi
+    cd ${kernel_dir}
+    echo -e ${LGR} "######### Compiling kernel #########${NC}"
+    make -j$(nproc --all) \
+    O=out \
+    ARCH=${ARCH}\
+    CC="ccache clang" \
+    CROSS_COMPILE=aarch64-linux-gnu- \
+    CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
+    CROSS_COMPILE_COMPAT=arm-linux-gnueabi- \
+    AR=llvm-ar \
+    LLVM_NM=llvm-nm \
+    OBJCOPY=llvm-objcopy \
+    LD=ld.lld NM=llvm-nm \
+    LLVM=1 \
+    LLVM_IAS=1
 }
+
 completion()
 {
     cd ${objdir}
     COMPILED_IMAGE=arch/arm64/boot/Image
     COMPILED_DTBO=arch/arm64/boot/dtbo.img
     if [[ -f ${COMPILED_IMAGE} && ${COMPILED_DTBO} ]]; then
-        echo -e ${LGR} "############################################"
-        echo -e ${LGR} "############# OkThisIsEpic!  ##############"
-        echo -e ${LGR} "############################################${NC}"
+
+        git clone -q https://github.com/GXC2356/AnyKernel3.git -b master $anykernel
+
+        mv -f $ZIMAGE ${COMPILED_DTBO} $anykernel
+
+        cd $anykernel
+        find . -name "*.zip" -type f
+        find . -name "*.zip" -type f
+        zip -r AnyKernel.zip *
+        mv AnyKernel.zip $zip_name
+        mv $anykernel/$zip_name $HOME/$zip_name
+        rm -rf $anykernel
+        echo -e ${LGR} "#### build completed successfully (hh:mm:ss) ####"
         exit 0
     else
-        echo -e ${RED} "############################################"
-        echo -e ${RED} "##         This Is Not Epic :'(           ##"
-        echo -e ${RED} "############################################${NC}"
-        exit 1
+        echo -e ${LGR} "#### failed to build some targets (hh:mm:ss) ####"
+
     fi
 }
 make_defconfig
-compile | tee out/error.txt
-miui
-sdk
-restore
+compile | tee out/log.txt
 completion
 cd ${kernel_dir}
