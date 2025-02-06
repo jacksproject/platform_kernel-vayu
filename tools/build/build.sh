@@ -12,20 +12,31 @@ builddir="${kernel_dir}/build"
 ZIMAGE=$kernel_dir/out/arch/arm64/boot/Image
 kernel_name="SkylineKernel_vayu_"
 zip_name="$kernel_name$(date +"%Y%m%d").zip"
-CLANG_DIR=tc/clang
+CLANG_DIR="$HOME/toolchains/neutron-clang"
 export CONFIG_FILE="vayu_user_defconfig"
 export ARCH="arm64"
 export KBUILD_BUILD_HOST=gxc2356
 export KBUILD_BUILD_USER=home
 
 export PATH="$CLANG_DIR/bin:$PATH"
+export KBUILD_COMPILER_STRING="$($CLANG_DIR/bin/clang --version | head -n 1 | perl -pe 's/\((?:http|git).*?\)//gs' | sed -e 's/  */ /g' -e 's/[[:space:]]*$//' -e 's/^.*clang/clang/')"
+export STRIP="$CLANG_DIR/bin/$(echo "$(find "$CLANG_DIR/bin" -type f -name "aarch64-*-gcc")" | awk -F '/' '{print $NF}' | sed -e 's/gcc/strip/')"
 
-if ! [ -d "$CLANG_DIR" ]; then
-    echo "Toolchain not found! Cloning to $CLANG_DIR..."
-    if ! git clone --depth=1 https://gitlab.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r536225.git -b 15.0 $CLANG_DIR; then
-        echo "Cloning failed! Aborting..."
-        exit 1
-    fi
+if ! [ -d "$HOME/toolchains" ]; then
+    mkdir $HOME/toolchains
+fi
+
+if ! [ -d "$HOME/toolchains/neutron-clang" ]; then
+    mkdir $HOME/toolchains/neutron-clang
+fi
+
+if ! [ -d "$CLANG_DIR/bin" ]; then
+    echo "Toolchain not found, downloading to $CLANG_DIR..."
+    cd $CLANG_DIR
+    bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") -S=10032024
+    bash <(curl -s "https://raw.githubusercontent.com/Neutron-Toolchains/antman/main/antman") --patch=glibc;
+    cd $kernel_dir
+    rm -rf bin build.info lib/clang lib/cmake lib/libLTO.so.19.0git lib/libRemarks.so.19.0git lib/libRemarks.so.19.0git lib/x86_64-unknown-linux-gnu lib/libclang-cpp.so.19.0git lib/libclang.so.19.0.0git lib/libclang.so.19.0git share
 fi
 
 # Colors
@@ -62,7 +73,7 @@ compile()
     echo -e ${LGR} "######### Compiling kernel #########${NC}"
     make -j$(nproc --all) \
     O=out \
-    ARCH=${ARCH}\
+    ARCH=${ARCH} \
     CC="ccache clang" \
     CROSS_COMPILE=aarch64-linux-gnu- \
     CROSS_COMPILE_ARM32=arm-linux-gnueabi- \
